@@ -1,0 +1,4 @@
+#!/bin/bash
+export PYTHONPATH=$PYTHONPATH:/etc/pharaoh
+
+python3 -m src "$@"
