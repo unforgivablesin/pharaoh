@@ -79,7 +79,7 @@ class SandboxLauncher:
         self.wayland_display = os.environ.get('WAYLAND_DISPLAY')
         self.xauthority = os.environ.get('XAUTHORITY')
         self.xdg_runtime_dir = os.environ['XDG_RUNTIME_DIR']
-        self.xdg_data_dirs = os.environ['XDG_DATA_DIRS']
+        self.xdg_data_dirs = os.environ.get('XDG_DATA_DIRS')
         self.display = os.environ.get('DISPLAY')
         self.home = os.environ['HOME']
         self.user = os.environ['USER']
@@ -200,8 +200,10 @@ class SandboxLauncher:
 
     def _set_misc(self) -> None:
         self._set_env("GTK_THEME", "Adwaita:dark")
-        self._set_env("XDG_DATA_DIRS", self.xdg_data_dirs)
         self._bind(f"/home/{self.user}/.config/mimeapps.list")
+
+        if self.xdg_data_dirs:
+            self._set_env("XDG_DATA_DIRS", self.xdg_data_dirs)
 
     def _bind_overlays(self):
         paths = ["/usr/bin", "/usr/lib"]
