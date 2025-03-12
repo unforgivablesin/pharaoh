@@ -95,12 +95,14 @@ class PackageManager:
             if self._is_installed(depend):
                 continue
 
-            print(f"Installing dependency {depend}")
-
             package = self._find_package(depend)
-            self._download_package(package)
-            self._package_package(package, app_dir)
-            self._install_package(package, app_dir)
+
+            if package:
+                print(f"Installing dependency {package.name}")
+
+                self._download_package(package)
+                self._package_package(package, app_dir)
+                self._install_package(package, app_dir)
 
     def _install_package(self, package: Package, app_dir: str) -> None:
         entry = DesktopEntry.from_desktop_entry(
@@ -109,13 +111,17 @@ class PackageManager:
 
         executable = os.listdir(f"{app_dir}/usr/bin")[0]
 
-        config = ConfigBuilder(app=package.name,
-                               executable=f"{app_dir}/usr/bin/{executable}",
-                               path=app_dir,
-                               entry=entry,
-                               dbus_app=f"org.Pharaoh.{package.name}",
-                               dbus_permissions=DBusPermissions(DBusPermissionList.Notifications),
-                               permissions=Permissions(PermissionList.Dri | PermissionList.Dbus | PermissionList.Ipc | PermissionList.Dbus | PermissionList.Pulseaudio | PermissionList.Pipewire))
+        config = ConfigBuilder(
+            app=package.name,
+            executable=f"{app_dir}/usr/bin/{executable}",
+            path=app_dir,
+            entry=entry,
+            dbus_app=f"org.Pharaoh.{package.name}",
+            dbus_permissions=DBusPermissions(DBusPermissionList.Notifications),
+            permissions=Permissions(PermissionList.Dri | PermissionList.Dbus
+                                    | PermissionList.Ipc | PermissionList.Dbus
+                                    | PermissionList.Pulseaudio
+                                    | PermissionList.Pipewire))
 
         config.build(path=permission_path)
 
@@ -162,7 +168,12 @@ class PackageManager:
         entry = os.listdir(f"{app_dir}/usr/share/applications")[0]
         package._entry = entry
 
-        shutil.copytree(f"{app_dir}/usr/share", export_dir, dirs_exist_ok=True)
+        try:
+            shutil.copytree(f"{app_dir}/usr/share",
+                            export_dir,
+                            dirs_exist_ok=True)
+        except shutil.Error:
+            pass
 
     def _fetch_mirrors(self) -> None:
 
@@ -170,8 +181,8 @@ class PackageManager:
 
         with open("/etc/pacman.d/mirrorlist") as fp:
             for mirror_str in fp:
-                if "Server = " in mirror_str:
-                    mirrors.append(Mirror.from_str(mirror_str))
+                if "Server = " in mirror_str and not "#" in mirror_str:
+                    mirrors.append(Mirror.from_str(mirror_str.strip()))
 
         return mirrors
 
