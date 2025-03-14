@@ -1,7 +1,8 @@
 import requests, random, tarfile, os, pathlib, shutil, subprocess
+from typing import List
 from pathlib import Path
 import zstandard as zstd
-from typing import Dict, Self
+from typing import Dict, Self, Set
 from clint.textui import progress
 
 from src import ARCH, REPOS, EXPORT_DIRECTORY, APPLICATION_DIRECTORY
@@ -88,11 +89,20 @@ class PackageManager:
 
         self._download_package(package)
         self._package_package(package, app_dir)
+        self._install_dependencies(package, app_dir)
         self._install_package(package, app_dir)
+
+    def _install_dependencies(self,
+                              package: Package,
+                              app_dir: str,
+                              installed_dependencies: Set[str] = None) -> None:
+
+        if not installed_dependencies:
+            installed_dependencies = set()
 
         for depend in package.depends:
 
-            if self._is_installed(depend):
+            if self._is_installed(depend) or depend in installed_dependencies:
                 continue
 
             package = self._find_package(depend)
@@ -103,6 +113,14 @@ class PackageManager:
                 self._download_package(package)
                 self._package_package(package, app_dir)
                 self._install_package(package, app_dir)
+
+                # Install the dependencies of the dependency
+                installed_dependencies.add(depend)
+                installed_dependencies.union(
+                    self._install_dependencies(package, app_dir,
+                                               installed_dependencies))
+
+        return installed_dependencies
 
     def _install_package(self, package: Package, app_dir: str) -> None:
         entry = DesktopEntry.from_desktop_entry(
