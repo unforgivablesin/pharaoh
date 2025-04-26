@@ -37,12 +37,14 @@ class Mirror:
 class Package:
 
     def __init__(self, name: str, filename: str, repo: str, arch: str,
-                 depends: str) -> None:
+                 depends: List[str], makedepends: List[str], optdepends: List[str]) -> None:
         self._name = name
         self._filename = filename
         self._repo = repo
         self._arch = arch
         self._depends = depends
+        self._optdepends = optdepends
+        self._makedepends = makedepends
 
         self._entry = None
 
@@ -58,8 +60,16 @@ class Package:
         return self._entry
 
     @property
-    def depends(self) -> str:
+    def depends(self) -> List[str]:
         return self._depends
+
+    @property
+    def makedepends(self) -> List[str]:
+        return self._makedepends
+
+    @property
+    def optdepends(self) -> List[str]:
+        return self._optdepends
 
     @property
     def filename(self) -> str:
@@ -71,11 +81,14 @@ class Package:
 
     @classmethod
     def from_dict(cls, data) -> Dict[str, str]:
-        return cls(name=data['pkgname'],
-                   filename=data['filename'],
-                   repo=data['repo'],
-                   arch=data['arch'],
-                   depends=data.get('depends'))
+        return cls(
+            name=data['pkgname'],
+            filename=data['filename'],
+            repo=data['repo'],
+            arch=data['arch'],
+            depends=[x.split("=")[0] if "=" in x else x for x in data.get('depends')],
+            makedepends=None,
+            optdepends=[x.split(":")[0] for x in data.get('optdepends')])
 
 
 class PackageManager:
@@ -84,7 +97,7 @@ class PackageManager:
         self._mirrors = self._fetch_mirrors()
 
     def install(self, package_name: str) -> None:
-        app_dir = f"{APPLICATION_DIRECTORY}/{package_name}"
+        app_dir = f"{APPLICATION_DIRECTORY}{package_name}"
         package = self._find_package(package_name)
 
         self._download_package(package)
@@ -92,10 +105,23 @@ class PackageManager:
         self._install_dependencies(package, app_dir)
         self._install_package(package, app_dir)
 
-    def _install_dependencies(self,
-                              package: Package,
-                              app_dir: str,
-                              installed_dependencies: Set[str] = None) -> None:
+    def _install_optional_dependencies(self, package: Package,
+                                       app_dir: str) -> None:
+        want = ["wayland", "gtk"]
+
+        for depend in package.optdepends:
+            for key in want:
+                if key in depend:
+                    package = self._find_package(depend)
+                    self._download_package(package)
+                    self._package_package(package, app_dir)
+                    #self._install_package(package, app_dir)
+
+    def _install_dependencies(
+            self,
+            package: Package,
+            app_dir: str,
+            installed_dependencies: Set[str] = None) -> List[str]:
 
         if not installed_dependencies:
             installed_dependencies = set()
@@ -112,22 +138,28 @@ class PackageManager:
 
                 self._download_package(package)
                 self._package_package(package, app_dir)
-                self._install_package(package, app_dir)
+                #self._install_package(package, app_dir)
 
                 # Install the dependencies of the dependency
                 installed_dependencies.add(depend)
                 installed_dependencies.union(
                     self._install_dependencies(package, app_dir,
                                                installed_dependencies))
+            else:
+                print(f"Failed to find dependency: '{depend}'")
 
         return installed_dependencies
 
     def _install_package(self, package: Package, app_dir: str) -> None:
         entry = DesktopEntry.from_desktop_entry(
             f"{EXPORT_DIRECTORY}/applications/{package.entry}")
-        permission_path = f"{app_dir}/{package.name}.json"
 
-        executable = os.listdir(f"{app_dir}/usr/bin")[0]
+        package_entry = DesktopEntry.from_desktop_entry(
+            f"/var/lib/pharaoh/app/{package.name}/usr/share/applications/{package.entry}"
+        )
+
+        permission_path = f"{app_dir}/{package.name}.json"
+        executable = package_entry._exec.split(" ")[0].split("/")[-1]
 
         config = ConfigBuilder(
             app=package.name,

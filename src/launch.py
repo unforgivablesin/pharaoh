@@ -123,11 +123,17 @@ class SandboxLauncher:
             "/etc/ssl/certs/ca-bundle.crt",
             "/etc/ssl/certs/ca-certificates.crt", "/etc/resolv.conf",
             "/etc/hosts", "/etc/ld.so.preload", "/etc/ld.so.conf",
-            "/etc/ld.so.cache", "/etc/ld.so.conf.d", "/etc/fonts"
+            "/etc/ld.so.cache", "/etc/ld.so.conf.d", "/etc/fonts", "/etc/passwd", "/etc/locale.conf"
         ]
 
         for path in etc_bind_paths:
             self._ro_bind(path)
+
+        # bind the etc directory too
+        for root, dirs, files in os.walk(f"{self.path}/etc"):
+            for file in files:
+                path = f"{root}/{file}"
+                self._ro_bind(source=path, dest=path.replace(self.path, ""))
 
     def _bind_filesystem_paths(self) -> None:
         fs_bind_paths = ["/usr", "/lib64", "/lib", "/usr", "/proc", "/dev"]
@@ -206,7 +212,7 @@ class SandboxLauncher:
             self._set_env("XDG_DATA_DIRS", self.xdg_data_dirs)
 
     def _bind_overlays(self):
-        paths = ["/usr/bin", "/usr/lib"]
+        paths = ["/usr/bin", "/usr/lib", "/usr/share"]
 
         for path in paths:
             if os.path.exists(f"{self.app_dir}/{path}"):
