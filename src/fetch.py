@@ -3,7 +3,7 @@ from typing import List
 from pathlib import Path
 import zstandard as zstd
 from typing import Dict, Self, Set
-from clint.textui import progress
+from tqdm import tqdm
 
 from src import ARCH, REPOS, EXPORT_DIRECTORY, APPLICATION_DIRECTORY
 from src.config import ConfigBuilder
@@ -192,12 +192,15 @@ class PackageManager:
 
         r = requests.get(url, stream=True)
         with open(package.filename, 'wb') as f:
-            total_length = int(r.headers.get('content-length'))
-            for chunk in progress.bar(r.iter_content(chunk_size=1024),
-                                      expected_size=(total_length / 1024) + 1):
-                if chunk:
-                    f.write(chunk)
-                    f.flush()
+            total_length = r.headers.get('content-length')
+            total_length = int(total_length)
+            chunk_size = 1024
+            with tqdm(total=total_length, unit='B', unit_scale=True, desc=package.filename) as pbar:
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        f.write(chunk)
+                        f.flush()
+                        pbar.update(len(chunk))
 
     def _decompress_package(self, package: Package, app_dir: str,
                             export_dir: str) -> None:
