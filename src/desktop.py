@@ -77,7 +77,7 @@ class DesktopEntry:
     @classmethod
     def from_desktop_entry(cls, filename: str) -> Self:
 
-        data = open(filename, "r").read()
+        data = open(filename, "r").readlines()
 
         def get_key_value(key: str) -> str:
             for line in data:

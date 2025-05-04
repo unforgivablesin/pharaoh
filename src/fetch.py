@@ -141,10 +141,10 @@ class PackageManager:
                 #self._install_package(package, app_dir)
 
                 # Install the dependencies of the dependency
-                installed_dependencies.add(depend)
-                installed_dependencies.union(
-                    self._install_dependencies(package, app_dir,
-                                               installed_dependencies))
+                #installed_dependencies.add(depend)
+                #installed_dependencies.union(
+                #    self._install_dependencies(package, app_dir,
+                #                               installed_dependencies))
             else:
                 print(f"Failed to find dependency: '{depend}'")
 
