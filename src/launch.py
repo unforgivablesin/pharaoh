@@ -1,4 +1,4 @@
-import os, fcntl, subprocess, pathlib
+import os, random, string, fcntl, subprocess, pathlib
 from typing import Optional
 
 from src import APPLICATION_DIRECTORY, APPLICATION_HOME_DIRECTORY
@@ -14,12 +14,33 @@ class XdgDbusProxy:
         self._command = ["/usr/bin/xdg-dbus-proxy"]
         self._xdg_runtime_dir = os.environ['XDG_RUNTIME_DIR']
 
+        random_str = "".join(random.choice([*string.ascii_letters, *string.digits]) for x in range(8))
+        self.socket = f"{self._xdg_runtime_dir}/xdg-dbus-proxy/{self._app}-{random_str}.sock"
+
     def _set_permissions(self) -> None:
 
         self._command.append(f"--own={self._app}.*")
-
         self._command.append("--filter")
-        self._command.append("--talk=org.freedesktop.portal.Desktop")
+        self._command.append("--sloppy-names")
+        #self._command.append("--own=im.riot.Riot.*")
+        self._command.append("--own=org.freedesktop.DBus")
+        self._command.append("--own=org.mpris.MediaPlayer2.im.riot.Riot.*")
+        self._command.append("--talk=org.kde.StatusNotifierWatcher")
+        self._command.append("--talk=org.freedesktop.ScreenSaver")
+        self._command.append("--talk=com.canonical.Unity")
+        self._command.append("--call=org.freedesktop.portal.*=*")
+        self._command.append("--broadcast=org.freedesktop.portal.*=@/org/freedesktop/portal/*")
+        self._command.append("--broadcast=org.a11y.atspi.Registry.EventListenerRegistered=@/org/a11y/atspi/registry")
+        self._command.append("--broadcast=org.a11y.atspi.Registry.EventListenerDeregistered=@/org/a11y/atspi/registry")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.Socket.Embed@/org/a11y/atspi/accessible/root")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.Socket.Unembed@/org/a11y/atspi/accessible/root")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.Registry.GetRegisteredEvents@/org/a11y/atspi/registry")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.GetKeystrokeListeners@/org/a11y/atspi/registry/deviceeventcontroller")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.GetDeviceEventListeners@/org/a11y/atspi/registry/deviceeventcontroller")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.NotifyListenersSync@/org/a11y/atspi/registry/deviceeventcontroller")
+        self._command.append("--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.NotifyListenersAsync@/org/a11y/atspi/registry/deviceeventcontroller")
+        self._command.append("--call=im.riot.Riot.Sandboxed.*=org.a11y.atspi.Socket.Embedded")
+
         """
         if self._permissions.has_permission(DBusPermissionList.Notifications):
             self._command.append("--talk=org.freedesktop.portal.Notification")
@@ -31,9 +52,8 @@ class XdgDbusProxy:
 
     def _set_dbus_proxy_socket(self) -> None:
         dbus_session_bus_address = os.environ['DBUS_SESSION_BUS_ADDRESS']
-
         self._command.append(
-            f"{dbus_session_bus_address} {self._xdg_runtime_dir}/xdg-dbus-proxy/{self._app}.sock"
+            f"{dbus_session_bus_address} {self.socket}"
         )
 
     def launch(self) -> int:
@@ -144,7 +164,8 @@ class SandboxLauncher:
         self.command.append("--dev /dev")
         self.command.append("--proc /proc")
 
-        self._tmpfs_bind("/tmp")
+        # Bind /tmp
+        self._bind(source=f"{APPLICATION_HOME_DIRECTORY}/{self.app}/tmp", dest="/tmp")
 
         self.command.append(f"--tmpfs /run --dir {self.xdg_runtime_dir}")
 
@@ -162,11 +183,17 @@ class SandboxLauncher:
             self._ro_bind(f"{self.xdg_runtime_dir}/{self.wayland_display}")
 
     def _set_dri(self) -> None:
-        self._set_env("LIBGL_ALWAYS_INDIRECT", "0")
+        self._set_env("LIBGL_ALWAYS_INDIRECT", "1")
         if self.permissions.has_permission(PermissionList.Dri):
             self._dev_bind("/dev/dri")
             self._ro_bind("/sys/devices/pci0000:00")
             self._ro_bind("/sys/dev/char")
+
+    def _set_sys(self) -> None:
+        self._ro_bind("/sys")
+
+    def _set_keyring(self) -> None:
+        self._ro_bind(f"{self.xdg_runtime_dir}/keyring")
 
     def _set_audio(self) -> None:
         if self.permissions.has_permission(PermissionList.Pulseaudio):
@@ -183,26 +210,22 @@ class SandboxLauncher:
         if self.permissions.has_permission(PermissionList.HomeFolder):
             self._bind(self.home)
         else:
-            app_dir = f"{APPLICATION_HOME_DIRECTORY}/{self.app}"
-
-            if not os.path.exists(app_dir):
-                os.makedirs(app_dir)
-                pathlib.Path(app_dir + "/.flatpak-info").touch()
-
+            app_dir = f"{APPLICATION_HOME_DIRECTORY}/{self.app}/home"
             self._bind(source=app_dir, dest=self.home)
 
     def _launch_xdg_dbus_proxy(self) -> Optional[int]:
         if self.permissions.has_permission(PermissionList.Dbus):
-            xdg_socket_path = f"{self.xdg_runtime_dir}/xdg-dbus-proxy/{self.dbus_app}.sock"
-            self._ro_bind(source=xdg_socket_path, dest="/run/user/1000/bus")
+            proxy = XdgDbusProxy(app=self.dbus_app,
+                                permissions=self.dbus_permissions)
+
+            self._ro_bind(source=proxy.socket, dest="/run/user/1000/bus")
 
             self._ro_bind("/var/lib/dbus/machine-id")
             self._ro_bind("/etc/machine-id")
             self._set_env("DBUS_SESSION_BUS_ADDRESS",
                           "unix:path=/run/user/1000/bus")
 
-            return XdgDbusProxy(app=self.dbus_app,
-                                permissions=self.dbus_permissions).launch()
+            return proxy.launch()
 
     def _set_misc(self) -> None:
         self._set_env("GTK_THEME", "Adwaita:dark")
@@ -232,6 +255,9 @@ class SandboxLauncher:
 
         self._set_display()
         self._set_audio()
+        #self._set_dri()
+        self._set_sys()
+        self._set_keyring()
 
         self._set_shared_downloads()
         self._set_shared_home()

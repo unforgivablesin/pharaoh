@@ -67,7 +67,9 @@ class DesktopEntry:
         data += "Keywords=" + self._keywords + "\n" if self._keywords else ""
 
         if self._no_display:
-            data += "NoDisplay=true"
+            data += f"NoDisplay=true"
+
+        home_dir = os.path.expanduser("~")
 
         filename = f"{EXPORT_DIRECTORY}/applications/{entry_name}"
 
@@ -77,13 +79,13 @@ class DesktopEntry:
     @classmethod
     def from_desktop_entry(cls, filename: str) -> Self:
 
-        data = open(filename, "r").readlines()
+        data = open(filename, "r").read()
 
-        def get_key_value(key: str) -> str:
-            for line in data:
-                if line[:len(key) + 1] == key + '=':
-                    result = line.split(key + "=")
-                    return result[1].split("\n")[0]
+        def get_key_value(key):
+            result = data.split(key + "=")
+
+            if len(result) > 1:
+                return result[1].split("\n")[0]
 
         name = get_key_value("Name")
         exec = get_key_value("Exec")

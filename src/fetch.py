@@ -3,9 +3,9 @@ from typing import List
 from pathlib import Path
 import zstandard as zstd
 from typing import Dict, Self, Set
-from tqdm import tqdm
+from clint.textui import progress
 
-from src import ARCH, REPOS, EXPORT_DIRECTORY, APPLICATION_DIRECTORY
+from src import ARCH, REPOS, EXPORT_DIRECTORY, APPLICATION_DIRECTORY, APPLICATION_HOME_DIRECTORY
 from src.config import ConfigBuilder
 from src.permissions import Permissions, PermissionList, DBusPermissionList, DBusPermissions
 from src.desktop import DesktopEntry, sandboxed_desktop_entry_factory
@@ -155,11 +155,19 @@ class PackageManager:
             f"{EXPORT_DIRECTORY}/applications/{package.entry}")
 
         package_entry = DesktopEntry.from_desktop_entry(
-            f"/var/lib/pharaoh/app/{package.name}/usr/share/applications/{package.entry}"
+            f"{APPLICATION_DIRECTORY}/{package.name}/usr/share/applications/{package.entry}"
         )
 
         permission_path = f"{app_dir}/{package.name}.json"
         executable = package_entry._exec.split(" ")[0].split("/")[-1]
+
+        os.makedirs(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/home", exist_ok=True)
+        os.makedirs(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/tmp", exist_ok=True)
+        pathlib.Path(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/home/.flatpak-info").touch()
+
+        os.chown(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/home", 1000, 1000)
+        os.chown(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/tmp", 1000, 1000)
+        os.chown(f"{APPLICATION_HOME_DIRECTORY}/{package.name}/home/.flatpak-info", 1000, 1000)
 
         config = ConfigBuilder(
             app=package.name,
@@ -192,15 +200,12 @@ class PackageManager:
 
         r = requests.get(url, stream=True)
         with open(package.filename, 'wb') as f:
-            total_length = r.headers.get('content-length')
-            total_length = int(total_length)
-            chunk_size = 1024
-            with tqdm(total=total_length, unit='B', unit_scale=True, desc=package.filename) as pbar:
-                for chunk in r.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        f.flush()
-                        pbar.update(len(chunk))
+            total_length = int(r.headers.get('content-length'))
+            for chunk in progress.bar(r.iter_content(chunk_size=1024),
+                                      expected_size=(total_length / 1024) + 1):
+                if chunk:
+                    f.write(chunk)
+                    f.flush()
 
     def _decompress_package(self, package: Package, app_dir: str,
                             export_dir: str) -> None:
